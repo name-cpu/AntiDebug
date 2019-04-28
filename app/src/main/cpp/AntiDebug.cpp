@@ -18,6 +18,9 @@ JavaVM* g_jvm = NULL;
 jobject g_context = NULL;
 bool g_bAttached = false;
 
+extern jobject g_callbackRef;
+extern jmethodID g_MethodCallback;
+
 jclass AntiDebug::mBuildConfigGlobalRef = 0;
 jclass AntiDebug::mDebugGlobalRef = 0;
 jclass AntiDebug::mXPosedGlobalRef = 0;
@@ -149,13 +152,17 @@ bool AntiDebug::IsHookByXPosed(){
         return true;
     }
 
-//    while (fgets(buf,sizeof(buf),fp)){
-//        if(strstr(buf, "com.saurik.substrate") || strstr(buf, "io.va.exposed") || strstr(buf, "de.robv.android.xposed")){
-//            LOG_PRINT_E("app be injected by xposed or substrate.");
-//            fclose(fp);
-//            return true;
-//        }
-//    }
+    while (fgets(buf,sizeof(buf),fp)){
+        string temp = buf;
+
+        if(temp.find("com.saurik.substrate") != string::npos
+           || temp.find("io.va.exposed") != string::npos
+           || temp.find("de.robv.android.xposed") != string::npos){
+            LOG_PRINT_E("app be injected by xposed or substrate.");
+            fclose(fp);
+            return true;
+        }
+    }
     fclose(fp);
 
     return false;
@@ -201,7 +208,12 @@ void* AntiDebug::antiDebugCallback(void *arg)
             bool bRet2 = pAntiDebug->IsHookByXPosed();
             bool bRet3 = pAntiDebug->isBeDebug();
             if(bRet1 || bRet2 || bRet3){
-                 memset((void*)0x00, 0, 1);
+                if(g_callbackRef != 0 && g_MethodCallback != 0){
+                    JNIEnv* env = GetEnv();
+                    if(env != NULL){
+                        env->CallVoidMethod(g_callbackRef, g_MethodCallback);
+                    }
+                }
             }
         } catch (...)
         {
@@ -249,8 +261,6 @@ void AntiDebug::getGlobalRef()
         {
            mXPosedGlobalRef = (jclass)env->NewGlobalRef(jXPosedClazz);
         }
-
-        //LOG_PRINT_I("mBuildConfigGlobalRef = %p, mDebugGlobalRef = %p, mXPosedGlobalRef = %p", mBuildConfigGlobalRef, mDebugGlobalRef, mXPosedGlobalRef);
     }
     catch(...)
     {
@@ -285,7 +295,6 @@ char* AntiDebug::getPackageName(JNIEnv* env)
     char* szPackageName = (char*)env->GetStringUTFChars(package_name, 0);
     return szPackageName;
 }
-
 
 void AntiDebug::antiDebug(JavaVM* jvm)
 {

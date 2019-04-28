@@ -16,5 +16,6 @@ private:
     static jclass mBuildConfigGlobalRef;
     static jclass mDebugGlobalRef;
     static jclass mXPosedGlobalRef;
+    static jclass mCallbackRef;
 };
 #endif
