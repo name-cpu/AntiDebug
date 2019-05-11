@@ -10,7 +10,6 @@ native层主要工作：
 2.检测进程的maps文件，app进程中加载的所有模块信息地址均会写入该文件中。我们分析是否有com.saurik.substrate/io.va.exposed/de.robv.android.xposed等一系列敏感模块信息来判断是否被反调试
 3.检测进程的调试器状态，首先检测app是否处于Debug模式，然后检测java层调试器是否打开。如果处于Release模式并且调试器打开，说明被反调试
 
-
 java层主要工作：
 在关键业务的地方调用AntiDeubg.isInject()方法，判断进程的堆栈是否包含两次com.android.internal.os.ZygoteInit信息。正常情况只会调用一次，如果app被xposed注入，被调用两次。
 
