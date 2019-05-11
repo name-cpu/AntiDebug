@@ -2,7 +2,7 @@
 android apk反调试工具，反hook、反xposed、反virtual xposed、反substrate
 
 该项目主要实现android app反第三方调试功能，主要功能用c++实现，因为考虑到用java实现会被xposed等功能拦截，导致反调试功能失效。
-
+该项目使用 __attribute__ ((visibility ("hidden"))) 隐藏了关键的函数符号，避免被静态分析。
 
 主要的思路和步骤如下：
 native层主要工作：
