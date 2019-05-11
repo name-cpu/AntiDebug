@@ -2,6 +2,7 @@
 android apk反调试工具，反hook、反xposed、反virtual xposed、反substrate
 
 该项目主要实现android app反第三方调试功能，主要功能用c++实现，因为考虑到用java实现会被xposed等功能拦截，导致反调试功能失效。
+
 主要的思路和步骤如下：
 native层主要工作：
 1.检测进程status文件TracerPid字段状态，如果该状态不为0，表示native层代码被调试
