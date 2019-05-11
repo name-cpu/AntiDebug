@@ -4,6 +4,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
+import android.widget.Toast;
 
 public class MainActivity extends AppCompatActivity implements IAntiDebugCallback{
 
@@ -17,6 +18,11 @@ public class MainActivity extends AppCompatActivity implements IAntiDebugCallbac
 
     @Override
     public void beInjectedDebug() {
-        Log.e("weikaizhi", "beInjectedDebug");
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                Toast.makeText(MainActivity.this, "app正在被调试或被注入", Toast.LENGTH_SHORT).show();
+            }
+        });
     }
 }

@@ -7,25 +7,23 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <stdlib.h>
-//#include <cstring>
 #include <string>
 #include <cstring>
 
 
 using namespace std;
 
-JavaVM* g_jvm = NULL; 
-jobject g_context = NULL;
-bool g_bAttached = false;
-
 extern jobject g_callbackRef;
 extern jmethodID g_MethodCallback;
 
-jclass AntiDebug::mBuildConfigGlobalRef = 0;
-jclass AntiDebug::mDebugGlobalRef = 0;
-jclass AntiDebug::mXPosedGlobalRef = 0;
+MACRO_HIDE_SYMBOL JavaVM* g_jvm = NULL;
+MACRO_HIDE_SYMBOL bool g_bAttached = false;
+MACRO_HIDE_SYMBOL jobject g_context = 0;
 
-JNIEnv *GetEnv()
+MACRO_HIDE_SYMBOL AntiDebug* AntiDebug::s_instance = NULL;
+MACRO_HIDE_SYMBOL int AntiDebug::mAppFlags = 0;
+
+MACRO_HIDE_SYMBOL JNIEnv *GetEnv()
 {
     if(g_jvm == NULL)
         return NULL;
@@ -46,7 +44,7 @@ JNIEnv *GetEnv()
     return env;
 }
  
-void DetachCurrent()
+MACRO_HIDE_SYMBOL void DetachCurrent()
 {
     if(g_bAttached && g_jvm != NULL)
     {
@@ -54,7 +52,7 @@ void DetachCurrent()
     }
 }
 
-jobject getGlobalAppContext(JNIEnv *env)
+MACRO_HIDE_SYMBOL jobject getGlobalAppContext(JNIEnv *env)
 {
     if(env == NULL)
         return NULL;
@@ -81,7 +79,7 @@ jobject getGlobalAppContext(JNIEnv *env)
     return g_context;
 }
 
-void string_replace( std::string &strBig, const string &strsrc, const std::string &strdst)
+MACRO_HIDE_SYMBOL void string_replace( std::string &strBig, const std::string &strsrc, const std::string &strdst)
 {
     string::size_type pos = 0;
     string::size_type srclen = strsrc.size();
@@ -94,8 +92,15 @@ void string_replace( std::string &strBig, const string &strsrc, const std::strin
     }
 }
 
+MACRO_HIDE_SYMBOL AntiDebug::AntiDebug(){
+    mDebugGlobalRef = 0;
+    mXPosedGlobalRef = 0;
+    mExceptionGlobalRef = 0;
+    mStackElementRef = 0;
+}
+
 //检测进程状态
-bool AntiDebug::readStatus(){
+MACRO_HIDE_SYMBOL bool AntiDebug::readStatus(){
     const int bufSize = 1024;
     char fileName[bufSize];
     char contentLine[bufSize];
@@ -107,7 +112,6 @@ bool AntiDebug::readStatus(){
     {
         while (fgets(contentLine, bufSize, fd))
         {
-            string string1;
             if (strncmp(contentLine, "PPid", 4) == 0)
             {
                 ppid = atoi(&contentLine[5]);
@@ -129,14 +133,14 @@ bool AntiDebug::readStatus(){
     }
     else
     {
-        LOG_PRINT_E("antiDebugCheck open %s fail...", fileName);
+        LOG_PRINT_E("status file open %s fail...", fileName);
     }
 
     return false;
 }
 
 //检测是否被xposed注入
-bool AntiDebug::IsHookByXPosed(){
+MACRO_HIDE_SYMBOL bool AntiDebug::IsHookByXPosed(){
     char buf[1024] = {0};
     FILE *fp;
     int pid = getpid();
@@ -153,11 +157,7 @@ bool AntiDebug::IsHookByXPosed(){
     }
 
     while (fgets(buf,sizeof(buf),fp)){
-        string temp = buf;
-
-        if(temp.find("com.saurik.substrate") != string::npos
-           || temp.find("io.va.exposed") != string::npos
-           || temp.find("de.robv.android.xposed") != string::npos){
+        if(strstr(buf, "com.saurik.substrate") || strstr(buf, "io.va.exposed") || strstr(buf, "de.robv.android.xposed")){
             LOG_PRINT_E("app be injected by xposed or substrate.");
             fclose(fp);
             return true;
@@ -168,38 +168,68 @@ bool AntiDebug::IsHookByXPosed(){
     return false;
 }
 
+//分析java层堆栈，获取不到堆栈信息
+MACRO_HIDE_SYMBOL bool AntiDebug::analyzeStackTrace(){
+     JNIEnv* env = GetEnv();
+     if(env == NULL || mExceptionGlobalRef == 0 || mStackElementRef == 0)
+        return false;
+
+	jmethodID  throwable_init = env->GetMethodID(mExceptionGlobalRef, "<init>", "(Ljava/lang/String;)V");
+	jobject throwable_obj = env->NewObject(mExceptionGlobalRef, throwable_init, env->NewStringUTF("test"));
+
+	jmethodID throwable_getStackTrace = env->GetMethodID(mExceptionGlobalRef, "getStackTrace", "()[Ljava/lang/StackTraceElement;");
+	jobjectArray jStackElements = (jobjectArray)env->CallObjectMethod(throwable_obj, throwable_getStackTrace);
+    
+    jmethodID jMthGetClassName = env->GetMethodID(mStackElementRef, "getClassName", "()Ljava/lang/String;");
+    int len = env->GetArrayLength(jStackElements);
+    LOG_PRINT_E("jStackElements = %p, jMthGetClassName = %p, len = %d", jStackElements, jMthGetClassName, len);
+
+    for(int i = 0; i < len; i++){
+        jobject jStackElement = env->GetObjectArrayElement(jStackElements, i);
+        jstring jClassName = (jstring)env->CallObjectMethod(jStackElement, jMthGetClassName);
+        const char* szClassName = env->GetStringUTFChars(jClassName, 0);
+        LOG_PRINT_I("szClassName = %s", szClassName);
+    }
+
+    return true;
+}
+
 //检测调试器状态
-bool AntiDebug::isBeDebug(){
-    if(g_context == NULL || mDebugGlobalRef == 0 || mBuildConfigGlobalRef == 0)
+MACRO_HIDE_SYMBOL bool AntiDebug::isBeDebug(){
+    if(g_context == NULL || mDebugGlobalRef == 0)
         return false;
 
     JNIEnv* env = GetEnv();
      if(env == NULL)
         return false;
     
-    jfieldID debugField = env->GetStaticFieldID(mBuildConfigGlobalRef, "DEBUG", "Z");
-    jboolean jDebug = env->GetStaticBooleanField(mBuildConfigGlobalRef, debugField);
-
-    jmethodID mthIsDebuggerConn = env->GetStaticMethodID(mDebugGlobalRef, "isDebuggerConnected", "()Z");
-    jboolean jIsDebuggerConnected = env->CallBooleanMethod(mDebugGlobalRef, mthIsDebuggerConn);
+    jclass jDebugClazz = env->FindClass("android/os/Debug");
+    bool jDebug = ((mAppFlags & 2) != 0);
+    jmethodID mthIsDebuggerConn = env->GetStaticMethodID(jDebugClazz, "isDebuggerConnected", "()Z");
+    jboolean jIsDebuggerConnected = env->CallStaticBooleanMethod(jDebugClazz, mthIsDebuggerConn);
 
     //DetachCurrent();
     if(!jDebug && jIsDebuggerConnected){
-        LOG_PRINT_E("app be debug in release mode.");
+        LOG_PRINT_E("app be debug in release mode jDebug = %d,jIsDebuggerConnected = %d", jDebug, jIsDebuggerConnected);
         return true;
     }
     
     return false;
 }
 
+//检测是否在虚拟机内运行
+MACRO_HIDE_SYMBOL bool IsRunInVirtual(){
+    return true;
+}
 
 //反调试检测
-void* AntiDebug::antiDebugCallback(void *arg)
+MACRO_HIDE_SYMBOL void* AntiDebug::antiDebugCallback(void *arg)
 {
     if(arg == NULL)
         return NULL;
 
     AntiDebug* pAntiDebug = (AntiDebug*)arg;
+
     while (true)
     {
         try
@@ -224,7 +254,7 @@ void* AntiDebug::antiDebugCallback(void *arg)
     }
 }
 
-void AntiDebug::getGlobalRef()
+MACRO_HIDE_SYMBOL void AntiDebug::getGlobalRef()
 {
     int status;
     JNIEnv *env = NULL;
@@ -242,14 +272,24 @@ void AntiDebug::getGlobalRef()
 
     try{
         char szClazzName[256] = {0};
-        sprintf(szClazzName, "%s/BuildConfig", strPackageName.c_str());
-        jclass clazz = env->FindClass(szClazzName);
-        mBuildConfigGlobalRef = (jclass)env->NewGlobalRef(clazz);
+        jclass jApplication = env->GetObjectClass(g_context);
+        jmethodID jMthApplicationInfo = env->GetMethodID(jApplication, "getApplicationInfo", "()Landroid/content/pm/ApplicationInfo;");
+        if(jMthApplicationInfo != 0){
+            jobject jAppinfo = env->CallObjectMethod(g_context, jMthApplicationInfo);
+            jclass jClazAppInfo = env->GetObjectClass(jAppinfo);
+            jfieldID jfieldFlags = env->GetFieldID(jClazAppInfo, "flags", "I");
+            mAppFlags = env->GetIntField(jAppinfo, jfieldFlags);
+            env->DeleteLocalRef(jClazAppInfo);
+        }
+         env->DeleteLocalRef(jApplication);
 
         memset(szClazzName, 0, 256);
         sprintf(szClazzName, "android/os/Debug");
         jclass jDebugClazz = env->FindClass(szClazzName);
-        mDebugGlobalRef = (jclass)env->NewGlobalRef(jDebugClazz);
+        if(jDebugClazz != 0){
+            mDebugGlobalRef = (jclass)env->NewGlobalRef(jDebugClazz);
+        }
+
 
         memset(szClazzName, 0, 256);
         sprintf(szClazzName, "de/robv/android/xposed/XposedBridge");
@@ -268,7 +308,12 @@ void AntiDebug::getGlobalRef()
     }
 }
 
-char* AntiDebug::getPackageName(JNIEnv* env)
+MACRO_HIDE_SYMBOL bool AntiDebug::isDebugMode()
+{
+    return (mAppFlags & 2) != 0;
+}
+
+MACRO_HIDE_SYMBOL char* AntiDebug::getPackageName(JNIEnv* env)
 {
     if(env == NULL || g_context == NULL)
         return NULL;
@@ -296,13 +341,20 @@ char* AntiDebug::getPackageName(JNIEnv* env)
     return szPackageName;
 }
 
-void AntiDebug::antiDebug(JavaVM* jvm)
+MACRO_HIDE_SYMBOL void AntiDebug::antiDebugInner()
 {
-    g_jvm = jvm;
     getGlobalRef();
     ptrace(PTRACE_TRACEME, 0, 0, 0);
     pthread_t ptid;
     pthread_create(&ptid, NULL, AntiDebug::antiDebugCallback, this);
-    //pthread_join(ptid, NULL);
+}
+
+MACRO_HIDE_SYMBOL void AntiDebug::antiDebug(JavaVM* jvm)
+{
+    g_jvm = jvm;
+    if(s_instance == NULL){
+        s_instance = new AntiDebug();
+        s_instance->antiDebugInner();
+    }
 }
 

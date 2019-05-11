@@ -2,20 +2,28 @@
 #define _ANTI_DEBUG_H
 #include <jni.h>
 
+#define MACRO_HIDE_SYMBOL __attribute__ ((visibility ("hidden")))
+
 class AntiDebug{
 public:
-    void antiDebug(JavaVM* jvm);
+    static void antiDebug(JavaVM* jvm);
+    static bool isDebugMode();
 private:
+    AntiDebug();
+    void antiDebugInner();
     static void* antiDebugCallback(void *arg);
-    void getGlobalRef();
     char* getPackageName(JNIEnv* env);
+    void getGlobalRef();
     bool readStatus();
     bool isBeDebug();
     bool IsHookByXPosed();
+    bool analyzeStackTrace();
 private:
-    static jclass mBuildConfigGlobalRef;
-    static jclass mDebugGlobalRef;
-    static jclass mXPosedGlobalRef;
-    static jclass mCallbackRef;
+    jclass mDebugGlobalRef;
+    jclass mXPosedGlobalRef;
+    jclass mExceptionGlobalRef;
+    jclass mStackElementRef;
+    static int mAppFlags;
+    static AntiDebug* s_instance;
 };
 #endif
