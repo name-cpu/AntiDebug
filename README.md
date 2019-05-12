@@ -17,7 +17,7 @@ android apk反调试工具，反hook、反xposed、反virtual xposed、反substr
 
 
 # 使用方法：
-在Activity中调用次方法注册监听即可，AntiDebug.setAntiDebugCallback(this);
+在Activity中调用此方法注册监听即可，AntiDebug.setAntiDebugCallback(this);
 Native层会实时监测进程状态，如果监测到被反调试会回调到beInjectedDebug方法中，详情见Demo。
 
 如有问题欢迎提Issues。
